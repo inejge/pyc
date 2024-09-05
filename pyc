@@ -1,0 +1,116 @@
+#!/usr/bin/awk -f
+#
+# pyc - Python -c command line parameter translator
+#
+# Python, as delivered, is not well suited for executing all kinds of scripts
+# given on the shell command line. There is the "-c" command-line switch, but its
+# utility is limited if you want to use imperative constructs and keep everything
+# on a single line, without here documents or piping the scripts to the interpreter.
+# Simple programs will work, but any block can't have preceding statements, limitng
+# the range of expressible scripts.
+#
+# This script accepts a Python program given as the first argument, written with
+# a slightly extended "-c" syntax, and outputs a Python exec() function executing
+# the program, suitable for using with shell command substitution. In the input,
+# every ';' is substituted with a newline, while every ";;" denotes a newline
+# followed by a one-level decrease in indentation.
+#
+# Indentation level is automatically increased if a block-introducing colon is
+# recognized. To prevent a key in a dictionary initializer from being parsed as
+# the beginning of a block, separate the key and the colon with a space.
+#
+# Depending on the shell quoting flavor, the Python program may be subject to shell
+# variable expansion, and any embedded double quotes and backslashes will be further
+# escaped to make it work with exec(). The command substitution syntax used must be
+# $() -- backticks won't work. The whole substitution should be double-quoted.
+#
+# Consider the following program, implementing the bare-bones "echo" command:
+#
+# import sys
+#
+# first = True
+# for a in sys.argv[1:]:
+#     if not first:
+#         print(" ", end="")
+#     print(a, end="")
+#     first = False
+# print("")
+#
+# It can be transformed and invoked by:
+#
+# python3 -c "$(pyc 'import sys; first = True; for a in sys.argv[1:]: if not first: print(
+# " ", end="");; print(a, end=""); first = False;; print("")')"
+#
+# (The two lines must be spliced into a single line.)
+#
+# Copyright (c) 2024 Ivan Nejgebauer.
+# Licensed under Apache v2.0.
+
+BEGIN {
+    if (ARGC < 2) exit 1;
+    pyc = ARGV[1]
+    pyct = ""		# pyc, translated
+
+    in_str = 0          # are we scanning a string for closing delimiter
+    str_delim = ""      # current string delimiter
+    str_raw = 0         # are we scanning a raw string
+    eat_whsp = 1        # are we consuming and discarding whitespace
+    indent = 0		# current indentation level
+
+    plen = length(pyc)
+    ppos = 0
+    prev_ch = ""
+
+    while (ppos < plen) {
+        ch = substr(pyc, ++ppos, 1)
+
+        if (eat_whsp) {
+            if (ch == " " || ch == "\t") continue
+            eat_whsp = 0
+            for (i = 0; i < indent; i++) pyct = pyct " "
+        }
+        if (in_str) {
+            if (ch == str_delim && (str_raw || prev_ch != "\\")) {
+                str_raw = 0
+                in_str = 0
+                str_delim = ""
+            } else {
+                prev_ch = ch
+            }
+            if (ch == "\\" || ch == "\"") pyct = pyct "\\"
+            pyct = pyct ch
+            continue
+        }
+        if (ch == "'" || ch == "\"") {
+            in_str = 1
+            str_delim = ch
+            if (prev_ch == "r" || prev_ch == "R") str_raw = 1
+            prev_ch = ch
+            if (ch == "\"") pyct = pyct "\\"
+            pyct = pyct ch
+            continue
+        }
+        if (ch == ";") {
+            if (ppos < plen && substr(pyc, ppos + 1, 1) == ";") {
+                ppos++
+                if (indent > 0) indent--
+            }
+            eat_whsp = 1
+            pyct = pyct "\\n"
+            prev_ch = ""
+            continue
+        }
+        if (ch == ":" && prev_ch != " ") {
+            if (ppos < plen && substr(pyc, ppos + 1, 1) == " ") {
+                indent++
+                eat_whsp = 1
+                pyct = pyct ":\\n"
+                prev_ch = ""
+                continue
+            }
+        }
+        pyct = pyct ch
+        prev_ch = ch
+    }
+    print "exec(\"" pyct "\")"
+}
