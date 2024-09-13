@@ -1,0 +1,71 @@
+.TH PYC 1
+.SH NAME
+pyc \- Python -c command line parameter translator
+.SH SYNOPSIS
+.BI "python -c ""$(pyc " inline-script ")"""
+.RI [ args ]
+.SH DESCRIPTION
+.PP
+The
+.B pyc
+program transforms the Python script given as the argument into a
+Python
+.BR exec ()
+command executing that script, where every ';' outside of string
+literals is replaced with a newline, keeping the same indentation
+level for the next command, while every ";;" emits a newline and
+decreases the indentation level by one. The script's syntax should
+be identical to that used in a file, except that multiline,
+triple-quoted strings are not supported.
+.PP
+A new block is recognized, and the indentation level increased, when
+.B pyc
+encounters a colon preceded with a non-space character and followed
+by a space. To prevent a key in a dictionary initializer from being
+parsed as the beginning of a block, separate the key and the colon
+with a space.
+.PP
+These transformations allow the use of block structures in the script
+when the result is used as an argument of Python's
+.B -c
+command-line option.
+.PP
+The translation is invoked through shell command substitution. The
+substitution must use the "$()" syntax and must be enclosed in
+double quotes. Depending on the quoting, the script itself could be
+subject to regular shell expansions before being passed to
+.BR pyc .
+.SH EXAMPLE
+.PP
+A bare-bones version of the
+.B echo
+command could be written like this:
+.PP
+.nf
+.in +.25i
+.ft CR
+import sys
+
+first = True
+for a in sys.argv[1:]:
+    if not first:
+        print(" ", end="")
+    print(a, end="")
+    first = False
+print("")
+.fi
+.PP
+It can be transformed and invoked from the command line like this:
+.PP
+.nf
+.in +.25i
+.ft CR
+python3 -c "$(pyc 'import sys; first = True; for a in sys.argv[1:]:
+if not first: print( " ", end="");; print(a, end=""); first = False;;
+print("")')"
+.fi
+.PP
+The three lines displayed in the example must be combined into a single line
+in the shell.
+.SH SEE ALSO
+.BR python ( 1 )
